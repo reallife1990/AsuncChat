@@ -1,0 +1,11 @@
+stationery:
+- paper
+- pen
+- pencil
+- clips
+number_office: 4
+in_stock:
+  paper: 34 шт
+  pen: 53 шт
+  pencil: 149 шт
+  clips: 26 шт
