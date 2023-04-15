@@ -1,4 +1,5 @@
 import json
+import sys
 
 
 def check_params(data_lst,cli=False):
@@ -9,13 +10,14 @@ def check_params(data_lst,cli=False):
     """
     port = 7777
     addr = ''
+    status = 'OK'
     if cli is True:
         addr = '127.0.0.1'
     # print(data_lst)
     for i, v in enumerate(data_lst):
         # print(i)
         if v == '-p':
-            port=data_lst[i+1]
+            port = data_lst[i+1]
             # i+=1
         elif v == '-a':
             addr = data_lst[i+1]
@@ -26,8 +28,9 @@ def check_params(data_lst,cli=False):
         else:
             port = int(port)
     except ValueError:
-        print('недопустимый порт. диапозон 1024-65535')
-    if cli is True or len(addr)>0:
+        status = 'недопустимый порт. диапозон 1024-65535'
+
+    if cli is True or len(addr) > 0:
         try:
             check_ip = addr.split('.')
             if len(check_ip) < 4:
@@ -36,15 +39,15 @@ def check_params(data_lst,cli=False):
                 if int(i) < 0 or int(i) > 255:
                     raise ValueError
         except ValueError:
-            print(f'{addr} - недопустимый ip')
-        # print(type(addr))
-    return (addr,port)
+            status = f'{addr} - недопустимый ip'
+
+    return addr, port, status
 
 
 def get_message(client):
     '''
     Утилита приёма и декодирования сообщения
-    принимает байты выдаёт словарь, если приняточто-то другое отдаёт ошибку значения
+    принимает байты выдаёт словарь, если принято что-то другое отдаёт ошибку значения
     :param client:
     :return:
     '''

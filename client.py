@@ -51,7 +51,12 @@ def start():
         params = sys.argv[2:]
         print(params)
         # checked_data = check.start(params)
-        work(check_params(params, True))
+        result = (check_params(params,True))
+        if result[2] == 'OK':
+            work(result[:2])
+        else:
+            print(result[2])
+            sys.exit(0)
 
 
 if __name__ =='__main__':
