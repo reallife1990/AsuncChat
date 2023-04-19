@@ -28,7 +28,7 @@ def check_params(data_lst,cli=False):
         else:
             port = int(port)
     except ValueError:
-        status = 'недопустимый порт. диапозон 1024-65535'
+        status = f'Порт "{port}" не разрешён. диапозон 1024-65535'
 
     if cli is True or len(addr) > 0:
         try:
@@ -39,7 +39,7 @@ def check_params(data_lst,cli=False):
                 if int(i) < 0 or int(i) > 255:
                     raise ValueError
         except ValueError:
-            status = f'{addr} - недопустимый ip'
+            status = f' Недопустимый ip -" {addr} "'
 
     return addr, port, status
 
