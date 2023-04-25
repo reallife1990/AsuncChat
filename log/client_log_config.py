@@ -20,3 +20,5 @@ client_logger.setLevel(logging.DEBUG)
 
 #добавляем хэндлер с параметрами
 client_logger.addHandler(LOG_FILE)
+
+
