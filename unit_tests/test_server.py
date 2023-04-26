@@ -1,6 +1,6 @@
 import unittest
 
-from server import parse_message
+from last.server import parse_message
 
 class TestParseMessage(unittest.TestCase):
 

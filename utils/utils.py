@@ -2,7 +2,35 @@ import json
 import sys
 
 
-def check_params(data_lst,cli=False):
+def check_params(ip, port, cli=False):
+    """
+         проверка параметров
+         cli-true проверка от клиента, false от сервера
+        :return:
+        """
+    status = 'OK'
+    try:
+        if int(port) < 1024 or int(port) > 65535:
+            raise ValueError
+        else:
+            port = int(port)
+    except ValueError:
+        status = f'Порт "{port}" не разрешён. диапозон 1024-65535'
+
+    if cli is True or len(ip) > 0:
+        try:
+            check_ip = ip.split('.')
+            if len(check_ip) < 4:
+                raise ValueError
+            for i in check_ip:
+                if int(i) < 0 or int(i) > 255:
+                    raise ValueError
+        except ValueError:
+            status = f' Недопустимый ip -" {ip} "'
+    return status
+
+
+def check_params2(data_lst,cli=False):
     """
      проверка параметров
      cli-true проверка от клиента, false от сервера

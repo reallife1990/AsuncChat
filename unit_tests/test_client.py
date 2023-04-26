@@ -1,6 +1,6 @@
 import unittest
 import time
-from client import create_message, process_ans
+from last.client import create_message, process_ans
 
 class Test(unittest.TestCase):
 
