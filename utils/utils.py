@@ -94,8 +94,8 @@ def send_message(sock, message):
     '''
     Утилита кодирования и отправки сообщения
     принимает словарь и отправляет его
-    :param sock:
-    :param message:
+    :param sock: сокет
+    :param message: словарь сообщения
     :return:
     '''
 

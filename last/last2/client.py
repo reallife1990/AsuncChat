@@ -1,50 +1,31 @@
 import argparse
+import subprocess
 import time
 from socket import *
 from utils.utils import *
 import log.client_log_config as logs
 from log.info_log import log
-import threading
 
 
-def incoming_messages(pipe, a=False):
-    cor_name = True
-    while cor_name:
-        try:
-            message = get_message(pipe)
-            logs.client_logger.debug(f' Получено сообщение {message}')
-            # print(message)
-            # если получено служебное сообщение
-            if message.get('response'):
-                if message['response'] == 300:
-                    print('такое имя пользователя занято')
-                    cor_name = False
-                elif message['response'] == 200:
-                    print('Добро пожаловать в чат')
-            else:
-                # обрабатываем сообщение
-                print(f'\nСообщение от {message["user"]}: {message["text"]}')
-        except:
-            pass
+def start_reader(ip, port, writer_port):
+    subprocess.Popen(f'python client_reader.py -a {ip} -p {port} -wp {writer_port}',
+                                    creationflags=subprocess.CREATE_NEW_CONSOLE)
 
 
-def create_message(user, txt, act=None, from_user=None):
+def create_message(user, txt, act=None):
     """
     Конфигурирование сообщения
     :param user: имя пользователя
     :param txt: сообщение
     :param act: тип( подключение, сообщение. выход)
-    :param from_user: для кого. None -  сообщение всем(не используется)
     :return: dict для отправки
     """
     message = {
         'action': 'message',
         'time': time.time(),
         'user': user,
-        'message': txt,
-        'from': from_user
+        'message': txt
     }
-
     if act is True:
         message['action'] = 'start'
     elif act is False:
@@ -53,44 +34,55 @@ def create_message(user, txt, act=None, from_user=None):
     return message
 
 
-def send_to_chat(pipe, user):
-    while True:
-        mes = input('сообщение:')
-        to_user = input('кому:')
-        if mes == '%%exit%%':
-            send_message(pipe, create_message(user, '', False))
-            print('вы вышли из чата')
-            time.sleep(3)
-            sys.exit(0)
-        else:
-            send_message(pipe,  create_message(user, mes, None, to_user))
-            time.sleep(1)
-
+def process_ans(message):
+    if 'response' in message:
+        if message['response'] == 300:
+            return {"code": 300, 'text':'подключение к чату. 2 из 3 ОК'}
+        elif message['response'] == 201:
+            return {"code": 201, 'text':'ридер подлючился. 3 из 3 ОК'}
+        elif message['response'] == 200:
+            return {"code": 200, 'text':'всё готово'}
+        return f'400 : {message["error"]}'
+    raise ValueError
 
 @log
 def work():
     ip, port, user = start()
-    # print(f'работа по адресу: {params[0]}:{params[1]}')
+    #print(f'работа по адресу: {params[0]}:{params[1]}')
     pipe = socket(AF_INET, SOCK_STREAM)
 
     try:
         pipe.connect((ip, port))
-        print('соединение ...')
-        send_message(pipe, create_message(user, '', True))
+        print('соединение 1 из 3 ОК')
+        writer_port = pipe.getsockname()[1]
+        # print(writer_port)
+        send_message(pipe, {'action':'connect'})
+        # send_message(pipe, create_message(user, '', True))
+        start_reader(ip, port, writer_port)
+        answer = process_ans(get_message(pipe))
 
-        reader = threading.Thread(target=incoming_messages, args=(pipe,True))
-        reader.daemon = True
-        reader.start()
-
-        sendler = threading.Thread(target=send_to_chat, args=(pipe, user))
-        sendler.daemon = True
-        sendler.start()
+        # процесс проверки всех необходимых подключений
+        if answer['code'] == 300:
+            print(answer['text'])
+            answer2 = process_ans(get_message(pipe))
+            # print(answer2)
+            if answer2['code'] == 201:
+                print(answer2['text'])
+                send_message(pipe, create_message(user, '', True))
+                answer3 = process_ans(get_message(pipe))
+                # print(answer3)
+                if answer3['code'] == 200:
+                    print(answer3['text'])
 
         while True:
-            time.sleep(1)
-            if sendler.is_alive() and reader.is_alive():
-                continue
-            break
+            mes = input('сообщение:')
+            if mes == '%%exit%%':
+                send_message(pipe, create_message(user, '', False))
+                print('вы вышли из чата')
+                time.sleep(3)
+                sys.exit(0)
+            else:
+                send_message(pipe,  create_message(user, mes))
 
     except (ValueError, json.JSONDecodeError):
         logs.client_logger.critical(f'Не удалось декодировать сообщение сервера.')
@@ -100,11 +92,6 @@ def work():
                                f'конечный компьютер отверг запрос на подключение.')
         print(f'Не удалось подключиться к серверу  {ip}:{port}, '
                                f'конечный компьютер отверг запрос на подключение.')
-
-
-
-
-
 
 @log
 def start():

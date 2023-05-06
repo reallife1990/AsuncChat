@@ -9,11 +9,11 @@ import select
 
 # класс-заготовка для сообщений в чате
 class Message():
-     __slots__ = ['action', 'user', 'time', 'text', 'to_user']
-
+     __slots__ = ['action', 'user', 'time', 'text']
 
 def main(listen_address, listen_port):
     """Загрузка параметров командной строки, если нет параметров, то задаём значения по умоланию"""
+
 
     logs.server_logger.info(
         f'Запущен сервер, порт для подключений: {listen_port}, '
@@ -26,10 +26,12 @@ def main(listen_address, listen_port):
     transport.settimeout(0.5)
 
     # очередь сообщений
+
     messages = []
 
-    #словарь клиентов имя:сокет
-    clients = {}
+    #список клиентов
+    writers = {}
+    readers = {}
 
     # Слушаем порт
     transport.listen(10)
@@ -43,30 +45,22 @@ def main(listen_address, listen_port):
         :param client: клиент
         :return:
         """
-        print('сообщение пришло')
+        print('проц зашёл')
         logs.server_logger.debug(f'Разбор сообщения от клиента : {message}')
 
         # Если это сообщение о подключении ридера,
-        # отвечаем об успехе автору,
-        # готовим приветственное сообщение( пока не используется)
+        # отвечаем об успехе и пишем в чат о новом пользователе
         if message['action'] == 'start':
-            time.sleep(1)
-            print(message['user'])
-            if message['user'] in clients.keys():
-                send_message(client, {'response': 300})
-            else:
-                send_message(client, {'response': 200})
-
-                obj = Message()
-                obj.action = 'enter'
-                obj.user = message['user']
-                obj.time = message['time']
-                obj.text = message['message']
-                obj.to_user = message['from']
-                clients[obj.user] = client
-                messages_list.append(obj)
+            code = client.getpeername()
+            print(code)
+            send_message(writers.get(code), {'response': 200})
+            obj = Message()
+            obj.action = 'enter'
+            obj.user = message['user']
+            obj.time = message['time']
+            obj.text = message['message']
+            messages_list.append(obj)
             return
-
         # # Если это сообщение, то добавляем его в очередь сообщений.
         elif message['action'] == 'message':
             obj = Message()
@@ -74,27 +68,50 @@ def main(listen_address, listen_port):
             obj.user = message['user']
             obj.time = message['time']
             obj.text = message['message']
-            obj.to_user = message['from']
             messages_list.append(obj)
             return
-        # # Если это сообщение о выходе, готовим сообщение
-        # в чат( не используется), удалаляем из словаря клиента,
-        # пишем в логи о выходе
+        # # Если это сообщение о выходе, отправляем ридеру
+        # команду на закрытие, сообщаем в чат, удаляем оба
+        # соединения из словарей
         elif message['action'] == 'exit':
+            code = client.getpeername()
+            print(code)
+            send_message(readers.get(code), {'action': 'quit'})
+            readers.pop(code)
+            writers.pop(code)
+            logs.server_logger.debug(f'Клиент с кодом : {code} покинул чат')
             obj = Message()
             obj.action = 'exit'
             obj.user = message['user']
             obj.time = message['time']
             obj.text = message['message']
-            obj.to_user = message['from']
             messages_list.append(obj)
-            clients.pop(obj.user)
-            logs.server_logger.debug(f'Клиент {client} покинул чат( по команде пользователя)')
             return
         else:
             logs.server_logger.warning(f'Неизвестная команда: {message["action"]} от {client}')
 
         return
+
+
+    # собираем пару писатель-слушатель (новые запросы)
+    @log
+    def create_full_client(client, addr):
+        message = get_message(client)
+        print(message)
+        if message['action'] == 'connect':
+            writers[addr[0], addr[1]] = client
+            print(writers)
+            send_message(client, {'response': 300})
+            logs.server_logger.info(f'{addr} - отправитель')
+        elif message['action'] == 'accept':
+            tmp = (addr[0], int(message['write_port']))
+            if tmp in writers.keys():
+                print('add reader')
+                readers[tmp] = client
+                print(readers)
+                logs.server_logger.info(f'{addr} - слушатель для {tmp}')
+                # print(writers.get(tmp))
+                send_message(writers.get(tmp), {'response': 201})
 
 
     # Основной цикл программы сервера
@@ -106,17 +123,16 @@ def main(listen_address, listen_port):
             pass
         else:
             logs.server_logger.info(f'Установлено соедение с ПК {client_address}')
-            process_client_message(get_message(client), messages, client)
-
+            create_full_client(client, client_address)
 
         recv_data_lst = []
         send_data_lst = []
         err_lst = []
-        # Принимаем клиентов
-
+        # Проверяем на наличие ждущих клиенто
+        #  проверка на готовую пару
         try:
-            if clients:
-                recv_data_lst, send_data_lst, err_lst = select.select(clients.values(), clients.values(), [], 1)
+            if len(list(writers.keys() & readers.keys())) > 0:
+                recv_data_lst, send_data_lst, err_lst = select.select(writers.values(), readers.values(), [], 1)
                 print(f' r{len(recv_data_lst)}, s{len(send_data_lst)}, e{len(err_lst)}')
         except OSError:
             pass
@@ -126,7 +142,6 @@ def main(listen_address, listen_port):
         if recv_data_lst:
             for client_with_message in recv_data_lst:
                 try:
-                    # print(get_message(client_with_message))
                     # (cообщение, список сообщений, клиент)
                     process_client_message(get_message(client_with_message),
                                            messages, client_with_message)
@@ -136,39 +151,24 @@ def main(listen_address, listen_port):
 
         # Если есть сообщения для отправки и ожидающие клиенты, отправляем им сообщение.
         if messages and send_data_lst:
-            if messages[0].to_user and messages[0].to_user in clients.keys():
-                print(messages)
-                print(messages[0].action, messages[0].user, messages[0].text, messages[0].to_user)
-                message = {
-                    'action': messages[0].action,
-                    'user': messages[0].user,
-                    'time': messages[0].time,
-                    'text': messages[0].text
-                }
-                try:
-                    send_message(clients.get(messages[0].to_user), message)
-                except:
-                    # если не получилось доставить сообщение:
-                    # пишем в логи, отписываем автору что пользователь вышел
-                    logs.server_logger.info(f' клиент {messages[0].to_user} '
-                                            f'отключился от сервера.')
-                    clients.pop(messages[0].to_user)
-                    message = {
-                        'action': messages[0].action,
-                        'user': 'server',
-                        'time': messages[0].time,
-                        'text': f'Пользователь {messages[0].to_user} - вышел'
-                    }
-                    send_message(clients.get(messages[0].user), message)
-            elif messages[0].action =='message':
-                message = {
-                    'action': messages[0].action,
-                    'user': 'server',
-                    'time': messages[0].time,
-                    'text': f'{messages[0].to_user} - такого пользователя нету'
-                }
-                send_message(clients.get(messages[0].user), message)
+            print(messages)
+            print(messages[0].action, messages[0].user, messages[0].text)
+            message = {
+                'action': messages[0].action,
+                'user': messages[0].user,
+                'time': messages[0].time,
+                'text': messages[0].text
+            }
             del messages[0]
+            for waiting_client in send_data_lst:
+                try:
+                    send_message(waiting_client, message)
+                except:
+                    # если сообщение не доставлено отключаем оба клиента
+                    logs.server_logger.info(f'Клиент {waiting_client.getpeername()} отключился от сервера.')
+
+                    readers.pop(waiting_client.getpeername())
+                    writers.pop(waiting_client.getpeername())
 
 
 def get_params():
