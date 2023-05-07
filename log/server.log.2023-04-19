@@ -1,0 +1,12 @@
+2023-04-19 22:23:03,711 DEBUG server.py приняты данные ip:,порт:7771
+2023-04-19 22:23:03,712 DEBUG server.py слушаем : :7771
+2023-04-19 22:27:32,850 CRITICAL server.py Ошибка! Запуск без команды run
+2023-04-19 22:28:07,040 DEBUG server.py приняты данные ip:,порт:7777
+2023-04-19 22:28:07,040 DEBUG server.py слушаем : :7777
+2023-04-19 22:28:19,239 DEBUG server.py клиент: <socket.socket fd=128, family=AddressFamily.AF_INET, type=SocketKind.SOCK_STREAM, proto=0, laddr=('127.0.0.1', 7777), raddr=('127.0.0.1', 50503)> сообщение: {'action': 'presence', 'time': 1681932499.2398443, 'user': 'test'}
+2023-04-19 22:30:58,503 DEBUG server.py приняты данные ip:,порт:7777
+2023-04-19 22:30:58,503 DEBUG server.py слушаем : :7777
+2023-04-19 22:31:04,983 DEBUG server.py клиент: ('127.0.0.1', 50522) сообщение: {'action': 'presence', 'time': 1681932664.9823241, 'user': 'test'}
+2023-04-19 22:37:45,655 DEBUG server.py приняты данные ip:,порт:7777
+2023-04-19 22:37:45,655 DEBUG server.py слушаем : 127.0.0.1:7777
+2023-04-19 22:38:05,129 DEBUG server.py  Принято сообщение.Клиент: ('127.0.0.1', 50563) сообщение: {'action': 'presence', 'time': 1681933085.1283553, 'user': 'test'}
