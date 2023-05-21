@@ -1,129 +1,124 @@
-import argparse
+import socket
 import time
-from socket import *
-from utils.utils import *
+import argparse
+import logging
+import threading
 import log.client_log_config as logs
 from log.info_log import log
-import threading
+from utils.utils import *
+from metaclasses import ClientMaker
+
+# Инициализация клиентского логера
+logger = logging.getLogger('client')
 
 
-def incoming_messages(pipe, a=False):
-    cor_name = True
-    while cor_name:
-        try:
-            message = get_message(pipe)
-            logs.client_logger.debug(f' Получено сообщение {message}')
-            # print(message)
-            # если получено служебное сообщение
-            if message.get('response'):
-                if message['response'] == 300:
-                    print('такое имя пользователя занято')
-                    cor_name = False
-                elif message['response'] == 200:
-                    print('Добро пожаловать в чат')
+# Класс формировки и отправки сообщений на сервер и взаимодействия с пользователем.
+class ClientSender(threading.Thread, metaclass=ClientMaker):
+    def __init__(self, user, sock):
+        self.user = user
+        self.sock = sock
+
+        super().__init__()
+
+    def run(self):
+        while True:
+            # print('coobwenie', end='')
+            mes = input()
+            to_user = input('(оставьте пустым если сообщение для всех)\nкому:')
+            if mes == '%%exit%%':
+                send_message(self.sock, self.create_message(self.user, '', False))
+                print('вы вышли из чата')
+                time.sleep(3)
+                sys.exit(0)
             else:
-                # обрабатываем сообщение
-                print(f'\nСообщение от {message["user"]}: {message["text"]}')
-        except:
-            pass
+                send_message(self.sock, self.create_message(self.user, mes, None, to_user))
+                time.sleep(1)
+                print('\b' * 15, end='')
+                print(f'Сообщение: ', end='')
+
+    def create_message(self, user, txt, act=None, from_user=None):
+        """
+        Конфигурирование сообщения
+        :param user: имя пользователя
+        :param txt: сообщение
+        :param act: тип( подключение, сообщение. выход)
+        :param from_user: для кого.
+        :return: dict для отправки
+        """
+        message = {
+            'action': '',
+            'time': time.time(),
+            'user': user,
+            'message': txt,
+            'from': from_user
+        }
+
+        if act is True:
+            message['action'] = 'start'
+        elif act is False:
+            message['action'] = 'exit'
+        else:
+            if from_user == '':
+                message['action'] = 'message'
+            else:
+                message['action'] = 'private'
+        return message
 
 
-def create_message(user, txt, act=None, from_user=None):
+# Класс-приёмник сообщений с сервера. Принимает сообщения, выводит в консоль.
+class ClientReader(threading.Thread, metaclass=ClientMaker):
+    def __init__(self, account_name, sock):
+        self.account_name = account_name
+        self.sock = sock
+        super().__init__()
+
+    def run(self):
+        cor_name = True
+        while cor_name:
+            try:
+                message = get_message(self.sock)
+                logs.client_logger.debug(f' Получено сообщение {message}')
+                # print(message)
+                # если получено служебное сообщение
+                if message.get('response'):
+                    if message['response'] == 300:
+                        print('такое имя пользователя занято')
+                        cor_name = False
+                    elif message['response'] == 200:
+                        print('Добро пожаловать в чат')
+                        print(f'\nСообщение: ', end='')
+                else:
+                    print('\b' * 15, end='')
+                    # обрабатываем сообщение
+                    print(f'{time.strftime("%H:%M", time.localtime(message["time"]))} [', end='')
+                    if message['action'] == 'private':
+                        print(f'Личное сообщение от ', end='')
+                    print(f'{message["user"]}]: {message["text"]}', end='')
+                    print(f'\nСообщение: ', end='')
+            except:
+                pass
+
+
+@log
+def presence_message(user):
     """
-    Конфигурирование сообщения
+    Конфигурирование стартового сообщения
     :param user: имя пользователя
-    :param txt: сообщение
-    :param act: тип( подключение, сообщение. выход)
-    :param from_user: для кого. None -  сообщение всем(не используется)
     :return: dict для отправки
     """
     message = {
-        'action': 'message',
+        'action': 'start',
         'time': time.time(),
         'user': user,
-        'message': txt,
-        'from': from_user
+        'message': '',
+        'from': ''
     }
-
-    if act is True:
-        message['action'] = 'start'
-    elif act is False:
-        message['action'] = 'exit'
-    # print(message)
     return message
 
-
-def send_to_chat(pipe, user):
-    while True:
-        mes = input('сообщение:')
-        to_user = input('кому:')
-        if mes == '%%exit%%':
-            send_message(pipe, create_message(user, '', False))
-            print('вы вышли из чата')
-            time.sleep(3)
-            sys.exit(0)
-        else:
-            send_message(pipe,  create_message(user, mes, None, to_user))
-            time.sleep(1)
-
-
+# Парсер аргументов коммандной строки
 @log
-def work():
-    ip, port, user = start()
-    # print(f'работа по адресу: {params[0]}:{params[1]}')
-    pipe = socket(AF_INET, SOCK_STREAM)
+def arg_parser():
 
-    try:
-        pipe.connect((ip, port))
-        print('соединение ...')
-        send_message(pipe, create_message(user, '', True))
-
-        reader = threading.Thread(target=incoming_messages, args=(pipe,True))
-        reader.daemon = True
-        reader.start()
-
-        sendler = threading.Thread(target=send_to_chat, args=(pipe, user))
-        sendler.daemon = True
-        sendler.start()
-
-        while True:
-            time.sleep(1)
-            if sendler.is_alive() and reader.is_alive():
-                continue
-            break
-
-    except (ValueError, json.JSONDecodeError):
-        logs.client_logger.critical(f'Не удалось декодировать сообщение сервера.')
-        print('Не удалось декодировать сообщение сервера.')
-    except ConnectionRefusedError:
-        logs.client_logger.critical(f'Не удалось подключиться к серверу  {ip}:{port}, '
-                               f'конечный компьютер отверг запрос на подключение.')
-        print(f'Не удалось подключиться к серверу  {ip}:{port}, '
-                               f'конечный компьютер отверг запрос на подключение.')
-
-
-
-
-
-
-@log
-def start():
-    """
-    получение параметров, имени пользователя
-    :return:
-    """
-    logs.client_logger.info('начало')
-    ip, port = get_params()
-    print(ip, port)
-    user = input('Введите имя в чате: ')
-    while user.isspace() or len(user) < 1:
-        print('Имя не может быть пустым!')
-        user = input('Введите имя в чате: ')
-    print('подключаемся....')
-    return ip, port, user
-
-
-def get_params():
     """
     Проверка входных параметров
     :return:
@@ -138,14 +133,66 @@ def get_params():
     if check_params(listen_address, listen_port, True) == 'OK':
         logs.client_logger.debug(f'приняты данные ip:{listen_address},порт:{listen_port}')
         # work((listen_address, listen_port))
-        return (listen_address, listen_port)
+
+        logs.client_logger.info('запрос имени')
+
+        user = input('Введите имя в чате: ')
+        while user.isspace() or len(user) < 1:
+            print('Имя не может быть пустым!')
+            user = input('Введите имя в чате: ')
+        print('подключаемся....')
+        return listen_address, listen_port, user
+
     else:
-        res = check_params(listen_address,listen_port)
+        res = check_params(listen_address, listen_port)
         logs.client_logger.critical(res)
         print(res)
         sys.exit(1)
 
 
+def main():
+    # Сообщаем о запуске
+    print('Консольный месседжер. Клиентский модуль.')
 
-if __name__ =='__main__':
-    work()
+    # Загружаем параметы коммандной строки и имя пользователя
+    server_address, server_port, user = arg_parser()
+
+    logger.info(
+        f'Запущен клиент с парамертами: адрес сервера: {server_address} , порт: {server_port}, имя пользователя: {user}')
+
+    # Инициализация сокета и сообщение серверу о нашем появлении
+    try:
+        transport = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        transport.connect((server_address, server_port))
+        send_message(transport, presence_message(user))
+        # Если соединение с сервером установлено корректно, запускаем клиенский процесс приёма сообщний
+        module_reciver = ClientReader(user, transport)
+        module_reciver.daemon = True
+        module_reciver.start()
+
+        # затем запускаем отправку сообщений и взаимодействие с пользователем.
+        module_sender = ClientSender(user, transport)
+        module_sender.daemon = True
+        module_sender.start()
+        logger.debug('Запущены процессы')
+
+        # Watchdog основной цикл, если один из потоков завершён, то значит или потеряно соединение или пользователь
+        # ввёл exit. Поскольку все события обработываются в потоках, достаточно просто завершить цикл.
+        while True:
+            time.sleep(1)
+            if module_reciver.is_alive() and module_sender.is_alive():
+                continue
+            break
+
+    except (ValueError, json.JSONDecodeError):
+        logs.client_logger.critical(f'Не удалось декодировать сообщение сервера.')
+        print('Не удалось декодировать сообщение сервера.')
+    except ConnectionRefusedError:
+        logs.client_logger.critical(f'Не удалось подключиться к серверу  {server_address}:{server_port}, '
+                               f'конечный компьютер отверг запрос на подключение.')
+        print(f'Не удалось подключиться к серверу  {server_address}:{server_port}, '
+                               f'конечный компьютер отверг запрос на подключение.')
+
+
+if __name__ == '__main__':
+    main()
