@@ -8,6 +8,7 @@ from log.info_log import log
 from utils.utils import *
 from descripts import Port
 from metaclasses import ServerMaker
+from server_database import ServerStorage
 
 # Инициализация логирования сервера.
 logger = logging.getLogger('server')
@@ -72,10 +73,13 @@ def arg_parser():
 class Server(metaclass=ServerMaker):
     port = Port()
 
-    def __init__(self, listen_address, listen_port):
+    def __init__(self, listen_address, listen_port, database):
         # Параментры подключения
         self.addr = listen_address
         self.port = listen_port
+
+        # База данных сервера
+        self.database = database
 
         # Список подключённых клиентов.
         # self.clients = []
@@ -127,7 +131,19 @@ class Server(metaclass=ServerMaker):
                 obj = Message('enter', message['user'], message['time'], message['message'],message['from'])
                 self.clients[obj.user] = client
                 messages_list.append(obj)
+                print(message['user'], *client.getpeername())
+                self.database.user_login(message['user'], *client.getpeername())
             return
+
+        elif message['action'] == 'get_online':
+            print('запрос пользователей')
+            # print(self.database.get_active_users())
+            # print(*self.database.get_active_users()[1])
+            # print([el[0] for el in self.database.get_active_users()[1]])
+            send_message(client, {'response': 202, 'value': self.database.get_active_users()[0],
+                               'users': [el[0] for el in self.database.get_active_users()[1]]})
+
+
 
             # # Если это сообщение о выходе, готовим сообщение
             # в чат( не используется), удалаляем из словаря клиента,
@@ -138,6 +154,7 @@ class Server(metaclass=ServerMaker):
             messages_list.append(obj)
             self.clients.pop(obj.user)
             logs.server_logger.debug(f'Клиент {client} покинул чат( по команде пользователя)')
+            self.database.user_logout(message['user'])
             return
 
 
@@ -154,8 +171,6 @@ class Server(metaclass=ServerMaker):
 
         return
 
-    # def send_private_message(self):
-    #     print(s)
 
     def main_loop(self):
         # Инициализация Сокета
@@ -248,8 +263,9 @@ def main():
     # Загрузка параметров командной строки, если нет параметров, то задаём значения по умоланию.
     listen_address, listen_port = arg_parser()
 
+    database = ServerStorage()
     # Создание экземпляра класса - сервера.
-    server = Server(listen_address, listen_port)
+    server = Server(listen_address, listen_port, database)
     server.main_loop()
 
 

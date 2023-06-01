@@ -3,10 +3,14 @@ import time
 import argparse
 import logging
 import threading
+from log import chat_logs
 import log.client_log_config as logs
 from log.info_log import log
 from utils.utils import *
 from metaclasses import ClientMaker
+
+
+
 
 # Инициализация клиентского логера
 logger = logging.getLogger('client')
@@ -25,13 +29,18 @@ class ClientSender(threading.Thread, metaclass=ClientMaker):
             # print('coobwenie', end='')
             mes = input()
             to_user = input('(оставьте пустым если сообщение для всех)\nкому:')
+            # выход
             if mes == '%%exit%%':
                 send_message(self.sock, self.create_message(self.user, '', False))
                 print('вы вышли из чата')
                 time.sleep(3)
                 sys.exit(0)
+            #     запрос на пользователей
+            elif mes == '%%online%%':
+                send_message(self.sock, online_users(self.user))
             else:
                 send_message(self.sock, self.create_message(self.user, mes, None, to_user))
+
                 time.sleep(1)
                 print('\b' * 15, end='')
                 print(f'Сообщение: ', end='')
@@ -57,11 +66,13 @@ class ClientSender(threading.Thread, metaclass=ClientMaker):
             message['action'] = 'start'
         elif act is False:
             message['action'] = 'exit'
+            chat_logs.chat_logs_write('message', 'server', 'Вы вышли из чата')
         else:
             if from_user == '':
                 message['action'] = 'message'
             else:
                 message['action'] = 'private'
+                chat_logs.chat_logs_write(message['action'], message['from'], f'<-- {message["message"]}')
         return message
 
 
@@ -81,24 +92,49 @@ class ClientReader(threading.Thread, metaclass=ClientMaker):
                 # print(message)
                 # если получено служебное сообщение
                 if message.get('response'):
+                    print(message)
                     if message['response'] == 300:
                         print('такое имя пользователя занято')
                         cor_name = False
                     elif message['response'] == 200:
+                        chat_logs.chat_logs_write('message', 'server', f'Добро пожаловать в чат {self.account_name}')
                         print('Добро пожаловать в чат')
                         print(f'\nСообщение: ', end='')
+                #        ответ о юзерах онлайн
+                    elif message['response'] == 202:
+                        print('\b' * 15, end='')
+                        print(f'В чате {message["value"]} пользователей:')
+                        for i in message['users']:
+                            print(i)
+                        print(f'\nСообщение: ', end='')
+
                 else:
                     print('\b' * 15, end='')
                     # обрабатываем сообщение
                     print(f'{time.strftime("%H:%M", time.localtime(message["time"]))} [', end='')
-                    if message['action'] == 'private':
+                    if message['action'] == 'private' and message['user'] != 'server':
                         print(f'Личное сообщение от ', end='')
+
                     print(f'{message["user"]}]: {message["text"]}', end='')
                     print(f'\nСообщение: ', end='')
+                    if message['action'] == 'private' and message['user'] != 'server':
+                        chat_logs.chat_logs_write(message['action'], message['user'], f'--> {message["text"]}')
+                    else:
+                        chat_logs.chat_logs_write(message['action'], message['to_user'], f'--> {message["text"]}')
             except:
                 pass
 
 
+
+def online_users(user):
+    message = {
+        'action': 'get_online',
+        'time': time.time(),
+        'user': user,
+        'message': '',
+        'from': ''
+    }
+    return message
 @log
 def presence_message(user):
     """
@@ -114,6 +150,29 @@ def presence_message(user):
         'from': ''
     }
     return message
+
+def arg(ip,port):
+
+
+    if check_params(ip, port, True) == 'OK':
+        logs.client_logger.debug(f'приняты данные ip:{ip},порт:{port}')
+        res = (True, f'приняты данные ip:{ip},порт:{port}')
+        # # work((listen_address, listen_port))
+        #
+        # logs.client_logger.info('запрос имени')
+        #
+        # user = input('Введите имя в чате: ')
+        # while user.isspace() or len(user) < 1:
+        #     print('Имя не может быть пустым!')
+        #     user = input('Введите имя в чате: ')
+        # print('подключаемся....')
+        # return listen_address, listen_port, user
+
+    else:
+        res = (False, check_params(ip, port))
+        logs.client_logger.critical(res)
+
+    return res
 
 # Парсер аргументов коммандной строки
 @log
@@ -169,6 +228,9 @@ def main():
         module_reciver = ClientReader(user, transport)
         module_reciver.daemon = True
         module_reciver.start()
+
+        # запрос списка клиентов
+        send_message(transport, online_users(user))
 
         # затем запускаем отправку сообщений и взаимодействие с пользователем.
         module_sender = ClientSender(user, transport)
